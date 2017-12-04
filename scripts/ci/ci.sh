@@ -11,7 +11,7 @@ if [[ ("$OS_NAME" == "linux") && ("$BUILDKITE_BRANCH" == "master") ]];
   else with_haddock=false
 fi
 
-targets="cardano-sl cardano-sl-auxx cardano-sl-tools cardano-sl-wallet"
+targets="cardano-sl cardano-sl-auxx cardano-sl-tools cardano-sl-wallet cardano-sl-node"
 
 # There are no macOS explorer devs atm and it's only deployed on linux
 if [[ "$OS_NAME" == "linux" ]]; then
@@ -20,7 +20,7 @@ fi
 
 # TODO: CSL-1133: Add test coverage to CI. To be reenabled when build times
 # become smaller and allow coverage report to be built.
-#projects="core db lrc infra update ssc godtossing txp"
+#projects="core db lrc infra update ssc txp"
 #to_build=''
 
 #for prj in $projects; do
@@ -53,9 +53,10 @@ pushd daedalus
   nix-shell --run "npm install && npm run build:prod"
   echo $BUILDKITE_BUILD_NUMBER > build-id
   echo $BUILDKITE_COMMIT > commit-id
+  echo https://buildkite.com/input-output-hk/cardano-sl/builds/$BUILDKITE_BUILD_NUMBER > ci-url
   cp ../log-config-prod.yaml .
-  cp ../node/configuration.yaml .
-  cp ../node/*genesis*.json .
+  cp ../lib/configuration.yaml .
+  cp ../lib/*genesis*.json .
   cp ../cardano-sl-tools.root/bin/cardano-launcher .
   cp ../cardano-sl-wallet.root/bin/cardano-node .
   # check that binaries exit with 0
