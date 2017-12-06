@@ -50,8 +50,6 @@ done
 
 # Generate daedalus-bridge
 pushd daedalus
-  rm -rf node_modules
-  nix-shell --run "npm install && npm run build:prod"
   echo $BUILDKITE_BUILD_NUMBER > build-id
   echo $BUILDKITE_COMMIT > commit-id
   echo https://buildkite.com/input-output-hk/cardano-sl/builds/$BUILDKITE_BUILD_NUMBER > ci-url
