@@ -17,10 +17,10 @@ There is important concept: **witness**. A witness is a proof that a transaction
 is allowed to spend the funds it spends. A separate witness contains a signature
 and is provided for each input of transaction.
 
-As a result we have a pair `(Tx, [TxInputWitness])`, where:
+As a result we have a pair `(Tx, [TxInWitness])`, where:
 
 * `Tx` is a new transaction,
-* `TxInputWitness` is a witness for particular input of `Tx`.
+* `TxInWitness` is a witness for particular input of `Tx`.
 
 ## Witness Structure
 

@@ -7,8 +7,6 @@
 2. All lengths are specified in bytes. The term "byte" is used as a synonym for "octet",
    8-bit unsigned value. All multi-byte values are encoded in network byte order (most
    significant byte first, also known as "Big-Endian").
-3. Length of some multi-byte values is **platform-dependent**, 64-bit platform is assumed
-   by default.
 
 ## What is CBOR?
 
@@ -51,7 +49,7 @@ Hereafter diagnostic notation will be used, for more convenience.
 
 ## Basic Format of Transaction
 
-Each transaction is represented as a 3-parts list:
+Each transaction is represented as a 3-element list:
 
 ```
 [
@@ -73,10 +71,10 @@ Transaction inputs is a non-empty list of inputs:
 
 ```
 [
-    [ Input 0 ],
-    [ Input 1 ],
+    Input 0,    # Each input is a list as well, see below.
+    Input 1,
     ...
-    [ Input N ]
+    Input N
 ]
 ```
 
@@ -85,7 +83,7 @@ Each input corresponds to the output of some previous transaction, so input cont
 ```
 [
     0,                                                      # InType
-    [
+    [                                                       # This is CBOR data item containing a list inside.
         h'BB57EF4DDC170EFAE1B1...FD42A498664BB6E7F1B5',     # TxId
         28491                                               # TxOutputIndex
     ]
@@ -99,13 +97,13 @@ where:
 * `TxOutputIndex` - index of the output in `T` that corresponds to this input.
 
 This input has type `0`, it means that it is common input corresponding to
-`utxo` (unspent transaction output). Other type (with value `1`) corresponds to
+`utxo` (unspent transaction output). Other type (with any value that isn't `0`) corresponds to
 unknown type of input (for some new types in the future).
 
 Identifier of previous transaction `T` is a hash of `T`. It is BLACK2b-256 hash,
 so its length is 32 bytes.
 
-Index of corresponding output in `T` is 4-byte integer.
+Index of corresponding output in `T` is an integer (the value between `0` and `2^32 - 1`).
 
 ## Transaction Outputs
 
@@ -126,12 +124,14 @@ represented as a list, for example:
 ```
 [
     [ ... ],                # Address
-    43633881177268914       # Value
+    43633881177268914       # Amount
 ]
 ```
 
-where `Address` is an address of recipient, and `Value` is a value we sent, in [Lovelaces](https://cardanodocs.com/glossary/#lovelace).
-`Value` is 8-byte integer, because Lovelace is the smallest unit of money in Cardano SL.
+where `Address` is an address of recipient, and `Amount` is a value we sent, in [Lovelaces](https://cardanodocs.com/glossary/#lovelace).
+`Amount` is an integer, because Lovelace is the smallest unit of money in Cardano SL. The
+value of `Amount` can be at most `45000000000000000`, it fits into an unsigned 64-bit
+integer.
 
 ### Address
 
@@ -140,23 +140,26 @@ Recipient's address is a list:
 ```
 [
     [
-        h'C61F822357B7F4A48CB9...A7C602C4A7856A6',    # Root
-        {                                             # Attributes
-            0: h'8200581CFC310...F678BD553206AC4',    # StakeDistribution
-            1: h'49EB93EC6B3A6205311D'                # PkDerivationPath
+        h'C61F822357B7F4A48CB9...A7C602C4A7856A6',       # Root
+        {                                                # Attributes
+            0: h'8200581CFC310...F678BD553206AC4',           # StakeDistribution
+            1: h'49EB93EC6B3A6205311D'                       # PkDerivationPath
         },
-        0                                             # AddrType
+        0                                                # AddrType
     ],
-    3948132476                                        # Checksum
+    3948132476                                           # Checksum
 ]
 ```
 
 where:
 
 * `Root` - address root,
-* `Attributes` - map with address attributes,
+* `Attributes` - map with address attributes (currently: stake distribution and derivation path),
 * `AddrType` - type of an address,
 * `Checksum` - CRC32 checksum of an address.
+
+Please note that address may contain other attributes (i.e. with other keys, not only `0` and `1`).
+When a certain attribute isn't specified, there will be a default value.
 
 #### Address Root
 
@@ -166,10 +169,10 @@ so its length is 28 byte.
 
 #### Address Attributes
 
-Technically attributes is a map, where `key` is 1-byte integer, and `value` is a value
+Technically attributes is a map, where `key` is a byte, and `value` is a value
 of arbitrary type.
 
-Address attributes have two keys:
+Currently address attributes have two keys:
 
 * `0` for stake distribution,
 * `1` for derivation path.
@@ -182,8 +185,8 @@ Default values for it are:
 There are 3 options for stake distribution:
 
 * Bootstrap era distribution,
-* single key distribution`,
-* multiple key distribution`.
+* single key distribution,
+* multiple key distribution.
 
 Please see the full example below for single key distribution.
 
@@ -194,17 +197,18 @@ Supported types of an address are:
 * `0` (like in example above) - `PublicKey`-address,
 * `1` - `Script`-address,
 * `2` - `Redeem`-address,
-* `3` - unknown address (for new types in future releases).
+* other tag - unknown address (for new types in future releases).
 
-Address type is 1-byte value.
+Address type is a byte.
 
 ## Transaction Attributes
 
 As mentioned before, attributes is a map, where `key` is 1-byte integer, and `value` is a
 value of arbitrary type.
 
-Please note that currently transactions always have **empty** attributes. Probably in future
-releases transactions will have real attributes.
+Please note that currently transactions with non-empty attributes are prohibited, and
+Daedalus wallet always generates and receives transactions with **empty** attributes. But
+in future it might change and probably transactions will have the real attributes.
 
 ## Full Example
 
@@ -323,7 +327,7 @@ UnsafeTx {
 
 ```
 Tx 48a404c7 with
-    inputs
+    inputs:
     [
         TxInUtxo 4806bbdf #15440,
         TxInUtxo 60fc8fbd #31371
@@ -335,7 +339,7 @@ Tx 48a404c7 with
     ]
 ```
 
-## Address Extraction
+## Use Case 1: Address Extraction
 
 This is another real-life example of transaction, now we obtain recipient address.
 
@@ -458,3 +462,26 @@ AL91N9VXRTCypFouG2KjJvJuvKmUC4p3XcpHnYETWRG5HJVpi2ixeN1nG5EWtbJCH71YjzhqHKcsmmPY
 ```
 
 This is an address in its final form.
+
+## Use Case 2: Transaction Fee
+
+Transaction fees in Cardano SL are described [here](https://cardanodocs.com/cardano/transaction-fees/).
+
+Let's consider the transaction from the use case 1:
+
+```
+Tx bd1b9526 with
+    inputs [
+        TxInUtxo e981442c #17306
+    ],
+    outputs: [
+        TxOut 15597252095955044 coin(s) -> AL91N9VXRTCypFouG2KjJvJuvKmUC4p3XcpHnYETWRG5HJVpi2ixeN1nG5EWtbJCH71YjzhqHKcsmmPYGRjy8nHDe2i17BEf9hTqDDLmcFVbHxx1GW9
+    ]
+```
+
+Transaction fee is a difference between `Vi` and `Vo`, where `Vi` is a value of all
+inputs and `Vo` is a value of all outputs. There is a single output, so we already have
+`Vo`: 15597252095955044 Lovelaces. But we don't have `Vi`, because this value is defined
+in previous transaction's output (in this example it is an output `#17306` of the
+transaction `e981442c`). So it is impossible to extract the fee from transaction `bd1b9526`
+without knowledge about (previous) transaction `e981442c`.
