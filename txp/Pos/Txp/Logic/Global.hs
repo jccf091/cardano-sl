@@ -26,9 +26,9 @@ import           Pos.DB (MonadDBRead, SomeBatchOp (..))
 import           Pos.Exception (assertionFailed)
 import           Pos.Txp.Base (flattenTxPayload)
 import qualified Pos.Txp.DB as DB
-import           Pos.Txp.Settings.Global (TxpBlock, TxpBlund, TxpGlobalApplyMode,
-                                          TxpGlobalRollbackMode, TxpGlobalSettings (..),
-                                          TxpGlobalVerifyMode)
+import           Pos.Txp.Settings.Global (ComponentBlock (..), TxpBlock, TxpBlund,
+                                          TxpGlobalApplyMode, TxpGlobalRollbackMode,
+                                          TxpGlobalSettings (..), TxpGlobalVerifyMode, UpdateBlock)
 import           Pos.Txp.Toil (DBToil, GenericToilModifier (..), GlobalApplyToilMode,
                                StakesView (..), ToilModifier, ToilT, applyToil, rollbackToil,
                                runDBToil, runToilTGlobal, verifyToil)
@@ -56,8 +56,7 @@ verifyBlocks verifyAllIsKnown newChain = do
   where
     verifyDo epoch = verifyToil epoch verifyAllIsKnown . convertPayload
     convertPayload :: TxpBlock -> [TxAux]
-    convertPayload (Left _)             = []
-    convertPayload (Right (_, payload)) = flattenTxPayload payload
+    convertPayload payload = flattenTxPayload (bcmPayload payload)
 
 data ApplyBlocksSettings extra m = ApplyBlocksSettings
     { absApplySingle     :: TxpBlund -> m ()
@@ -134,5 +133,4 @@ runToilAction action = runDBToil . runToilTGlobal $ action
 
 -- Zip block's TxAuxes and corresponding TxUndos.
 blundToAuxNUndo :: TxpBlund -> [(TxAux, TxUndo)]
-blundToAuxNUndo (Left _, _)                = []
-blundToAuxNUndo (Right (_, payload), undo) = zip (flattenTxPayload payload) undo
+blundToAuxNUndo (payload, undo) = zip (flattenTxPayload (bcmPayload payload)) (bcmPayload undo)

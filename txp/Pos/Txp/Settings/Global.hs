@@ -4,12 +4,14 @@
 -- | Global settings of Txp.
 
 module Pos.Txp.Settings.Global
-       ( TxpGlobalVerifyMode
+       ( ComponentBlock (..)
+       , TxpGlobalVerifyMode
        , TxpGlobalApplyMode
        , TxpGlobalRollbackMode
        , TxpBlock
        , TxpBlund
        , TxpGlobalSettings (..)
+       , UpdateBlock
        ) where
 
 import           Universum
@@ -47,13 +49,20 @@ type TxpGlobalRollbackMode m = TxpCommonMode m
 -- [CSL-1156] Maybe find better approach (at least wrap into normal types).
 -- type TxpBlock = Either (Some IsGenesisHeader) (Some IsMainHeader, TxPayload)
 -- type TxpBlund = (TxpBlock, TxpUndo)
+
+-- | Representation of 'Block' passed to a component.
 data ComponentBlock payload =
     ComponentBlockGenesis (Some IsGenesisHeader)
-  | ComponentBlockMain { bcmHeader :: !(Some IsMainHeader), bcmPayload :: !payload }
+    | ComponentBlockMain
+       { bcmHeader  :: !(Some IsMainHeader)
+       , bcmPayload :: !payload }
+
+-- deriving instance Show a => Show (ComponentBlock a)
 
 type TxpBlock = ComponentBlock TxPayload
 type UpdateBlock = ComponentBlock UpdatePayload
-type TxpBlund = (TxpBlock, TxpUndo)
+type UndoBlock = ComponentBlock TxpUndo
+type TxpBlund = (TxpBlock, UndoBlock)
 
 data TxpGlobalSettings = TxpGlobalSettings
     { -- | Verify a chain of payloads from blocks and return txp undos
