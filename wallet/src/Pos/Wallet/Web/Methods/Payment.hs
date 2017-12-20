@@ -76,13 +76,13 @@ newPayment sa passphrase srcAccount dstAccount coin policy = do
 
 getPendingTxs' :: MonadWalletWebMode m => InputSelectionPolicy -> m [PendingTx]
 getPendingTxs' = \case
-   OptimizeForSecurity ->
-     -- NOTE (int-index) The pending transactions are ignored when we optimize
-     -- for security, so it is faster to not get them. In case they start being
-     -- used for other purposes, this shortcut must be removed.
-     return []
-   OptimizeForSize ->
-     getPendingTxs
+    OptimizeForSecurity ->
+        -- NOTE (int-index) The pending transactions are ignored when we optimize
+        -- for security, so it is faster to not get them. In case they start being
+        -- used for other purposes, this shortcut must be removed.
+        return []
+    OptimizeForSize ->
+        getPendingTxs
 
 getTxFee
      :: MonadWalletWebMode m
