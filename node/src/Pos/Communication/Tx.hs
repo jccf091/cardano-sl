@@ -38,6 +38,9 @@ import           Pos.Txp.Network.Types      (TxMsgContents (..))
 import           Pos.Util.Util              (eitherToThrow)
 import           Pos.WorkMode.Class         (MinWorkMode)
 
+import           Pos.Wallet.Web.Pending.Types -- FIXME
+
+
 type TxMode ssc m
     = ( MinWorkMode m
       , MonadBalances m
@@ -60,28 +63,30 @@ submitAndSave enqueue txAux@TxAux {..} = do
 -- | Construct Tx using multiple secret keys and given list of desired outputs.
 prepareMTx
     :: TxMode ssc m
-    => (Address -> SafeSigner)
+    => [PendingTx]
+    -> (Address -> SafeSigner)
     -> InputSelectionPolicy
     -> NonEmpty Address
     -> NonEmpty TxOutAux
     -> AddrData m
     -> m (TxAux, NonEmpty TxOut)
-prepareMTx hdwSigners inputSelectionPolicy addrs outputs addrData = do
+prepareMTx pendingTx hdwSigners inputSelectionPolicy addrs outputs addrData = do
     utxo <- getOwnUtxos (toList addrs)
-    eitherToThrow =<< createMTx inputSelectionPolicy utxo hdwSigners outputs addrData
+    eitherToThrow =<< createMTx pendingTx inputSelectionPolicy utxo hdwSigners outputs addrData
 
 -- | Construct Tx using secret key and given list of desired outputs
 submitTx
     :: TxMode ssc m
-    => EnqueueMsg m
+    => [PendingTx]
+    -> EnqueueMsg m
     -> SafeSigner
     -> NonEmpty TxOutAux
     -> AddrData m
     -> m (TxAux, NonEmpty TxOut)
-submitTx enqueue ss outputs addrData = do
+submitTx pendingTx enqueue ss outputs addrData = do
     let ourPk = safeToPublic ss
     utxo <- getOwnUtxoForPk ourPk
-    txWSpendings <- eitherToThrow =<< createTx utxo ss outputs addrData
+    txWSpendings <- eitherToThrow =<< createTx pendingTx utxo ss outputs addrData
     txWSpendings <$ submitAndSave enqueue (fst txWSpendings)
 
 -- | Construct redemption Tx using redemption secret key and a output address

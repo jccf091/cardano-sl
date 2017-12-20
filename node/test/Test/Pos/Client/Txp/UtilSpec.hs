@@ -121,7 +121,7 @@ testCreateMTx
     => CreateMTxParams
     -> TxpTestProperty (Either TxError (TxAux, NonEmpty TxOut))
 testCreateMTx CreateMTxParams{..} =
-    createMTx cmpInputSelectionPolicy cmpUtxo (getSignerFromList cmpSigners)
+    createMTx [] cmpInputSelectionPolicy cmpUtxo (getSignerFromList cmpSigners)
     cmpOutputs cmpAddrData
 
 createMTxWorksWhenWeAreRichSpec :: HasTxpConfigurations => InputSelectionPolicy -> TxpTestProperty ()
@@ -201,7 +201,7 @@ redemptionSpec = do
 txWithRedeemOutputFailsSpec :: HasTxpConfigurations => InputSelectionPolicy -> TxpTestProperty ()
 txWithRedeemOutputFailsSpec inputSelectionPolicy = do
     txOrError <-
-        createMTx inputSelectionPolicy utxo (getSignerFromList signers) outputs addrData
+        createMTx [] inputSelectionPolicy utxo (getSignerFromList signers) outputs addrData
     case txOrError of
         Left (OutputIsRedeem _) -> return ()
         Left err -> stopProperty $ pretty err

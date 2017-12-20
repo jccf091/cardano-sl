@@ -146,7 +146,7 @@ sendToAllGenesis sendActions (SendToAllGenesisParams duration conc delay_ sendMo
                 | otherwise = (atomically $ tryReadTQueue txQueue) >>= \case
                       Just (key, txOuts, neighbours) -> do
                           utxo <- getOwnUtxoForPk $ safeToPublic (fakeSigner key)
-                          etx <- createTx utxo (fakeSigner key) txOuts (toPublic key)
+                          etx <- createTx [] utxo (fakeSigner key) txOuts (toPublic key)
                           case etx of
                               Left err -> do
                                   addTxFailed tpsMVar
@@ -195,7 +195,7 @@ send sendActions idx outputs = do
         curPk = encToPublic skey
     etx <- withSafeSigner skey (pure emptyPassphrase) $ \mss -> runExceptT $ do
         ss <- mss `whenNothing` throwError (toException $ AuxxException "Invalid passphrase")
-        ExceptT $ try $ submitTx
+        ExceptT $ try $ submitTx []
             (immediateConcurrentConversations sendActions ccPeers)
             ss
             (map TxOutAux outputs)
