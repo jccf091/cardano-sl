@@ -8,6 +8,7 @@ module Pos.Client.Txp.Util
        (
        -- * Tx creation params
          InputSelectionPolicy (..)
+       , PendingAddresses (..)
 
        -- * Tx creation
        , TxCreateMode
@@ -44,7 +45,7 @@ import           Control.Monad.Except     (ExceptT, MonadError (throwError), run
 import           Data.Default             (Default (..))
 import           Data.Fixed               (Fixed, HasResolution)
 import qualified Data.HashSet             as HS
-import           Data.List                (tail, partition)
+import           Data.List                (partition, tail)
 import qualified Data.List.NonEmpty       as NE
 import qualified Data.Map                 as M
 import qualified Data.Semigroup           as S
@@ -77,12 +78,15 @@ import           Pos.Txp                  (Tx (..), TxAux (..), TxFee (..), TxIn
 import           Pos.Types                (Address, Coin, StakeholderId, mkCoin, sumCoins)
 import           Pos.Util.LogSafe         (SecureLog, buildUnsecure)
 
-import           Pos.Wallet.Web.Pending.Types -- FIXME
-
 type TxInputs = NonEmpty TxIn
 type TxOwnedInputs owner = NonEmpty (owner, TxIn)
 type TxOutputs = NonEmpty TxOutAux
 type TxWithSpendings = (TxAux, NonEmpty TxOut)
+
+-- | List of addresses which are refered by at least one output of transaction
+-- which is not yet confirmed i.e. detected in block.
+newtype PendingAddresses = PendingAddresses (Set Address)
+    deriving (Show, Monoid)
 
 instance Buildable TxWithSpendings where
     build (txAux, neTxOut) =
@@ -294,8 +298,8 @@ makeLenses ''InputPickerState
 
 type InputPicker = StateT InputPickerState (Either TxError)
 
-plainInputPicker :: [PendingTx] -> InputPickingWay
-plainInputPicker pendingTx utxo _outputs moneyToSpent =
+plainInputPicker :: PendingAddresses -> InputPickingWay
+plainInputPicker (PendingAddresses pendingAddrs) utxo _outputs moneyToSpent =
     evalStateT (pickInputs []) (InputPickerState moneyToSpent sortedUnspent)
   where
     onlyConfirmedInputs :: Set.Set Address -> (TxIn, TxOutAux) -> Bool
@@ -316,12 +320,10 @@ plainInputPicker pendingTx utxo _outputs moneyToSpent =
     -- (The same malady the @OptimiseForSecurity@ policy was affected by).
     sortedUnspent = confirmed ++ unconfirmed
 
-    -- A set of all the unconfirmed addresses.
-    allPending = allPendingAddresses pendingTx
-
     (confirmed, unconfirmed) =
       -- Give precedence to "confirmed" addresses.
-      partition (onlyConfirmedInputs allPending) (sortOn (Down . txOutValue . toaOut . snd) (M.toList utxo))
+      partition (onlyConfirmedInputs pendingAddrs)
+                (sortOn (Down . txOutValue . toaOut . snd) (M.toList utxo))
 
     pickInputs :: FlatUtxo -> InputPicker FlatUtxo
     pickInputs inps = do
@@ -336,29 +338,6 @@ plainInputPicker pendingTx utxo _outputs moneyToSpent =
                     ipsMoneyLeft .= unsafeSubCoin moneyLeft (min txOutValue moneyLeft)
                     ipsAvailableOutputs %= tail
                     pickInputs (inp : inps)
-
--- | Filters the input '[PendingTx]' to choose only the ones which are not
--- yet persisted in the blockchain.
-nonConfirmedTransactions :: [PendingTx] -> [PendingTx]
-nonConfirmedTransactions = filter isPending
-  where
-    -- | Is this 'PendingTx' really pending?
-    isPending :: PendingTx -> Bool
-    isPending PendingTx{..} = case _ptxCond of
-        PtxInNewestBlocks _ -> False
-        PtxPersisted        -> False
-        _                   -> True
-
--- | Returns the full list of "pending addresses", which are @output@ addresses
--- associated to transactions not yet persisted in the blockchain.
-allPendingAddresses :: [PendingTx] -> Set.Set Address
-allPendingAddresses = Set.unions . map grabTxOutputs . nonConfirmedTransactions
-  where
-    grabTxOutputs :: PendingTx -> Set.Set Address
-    grabTxOutputs PendingTx{..} =
-        let (TxAux tx _) = _ptxTxAux
-            (UnsafeTx _ outputs _) = tx
-            in Set.fromList $ map (\(TxOut a _) -> a) (toList outputs)
 
 -------------------------------------------------------------------------
 -- Grouped inputs picking
@@ -464,7 +443,7 @@ prepareTxRawWithPicker inputPicker utxo outputs (TxFee fee) = do
 
 prepareTxRaw
     :: Monad m
-    => [PendingTx]
+    => PendingAddresses
     -> Utxo
     -> TxOutputs
     -> TxFee
@@ -492,7 +471,7 @@ mkOutputsWithRem addrData TxRaw {..}
 
 prepareInpsOuts
     :: TxCreateMode m
-    => [PendingTx]
+    => PendingAddresses
     -> Utxo
     -> TxOutputs
     -> AddrData m
@@ -504,7 +483,7 @@ prepareInpsOuts pendingTx utxo outputs addrData = do
 
 createGenericTx
     :: TxCreateMode m
-    => [PendingTx]
+    => PendingAddresses
     -> (TxOwnedInputs TxOut -> TxOutputs -> TxAux)
     -> InputSelectionPolicy
     -> Utxo
@@ -518,7 +497,7 @@ createGenericTx pendingTx creator inputSelectionPolicy utxo outputs addrData =
 
 createGenericTxSingle
     :: TxCreateMode m
-    => [PendingTx]
+    => PendingAddresses
     -> (TxInputs -> TxOutputs -> TxAux)
     -> InputSelectionPolicy
     -> Utxo
@@ -531,7 +510,7 @@ createGenericTxSingle pendingTx creator = createGenericTx pendingTx (creator . m
 -- Currently used for HD wallets only, thus `HDAddressPayload` is required
 createMTx
     :: TxCreateMode m
-    => [PendingTx]
+    => PendingAddresses
     -> InputSelectionPolicy
     -> Utxo
     -> (Address -> SafeSigner)
@@ -546,7 +525,7 @@ createMTx pendingTx groupInputs utxo hdwSigners outputs addrData =
 -- outputs.
 createTx
     :: TxCreateMode m
-    => [PendingTx]
+    => PendingAddresses
     -> Utxo
     -> SafeSigner
     -> TxOutputs
@@ -559,7 +538,7 @@ createTx pendingTx utxo ss outputs addrData =
 -- | Make a transaction, using M-of-N script as a source
 createMOfNTx
     :: TxCreateMode m
-    => [PendingTx]
+    => PendingAddresses
     -> Utxo
     -> [(StakeholderId, Maybe SafeSigner)]
     -> TxOutputs
@@ -583,7 +562,7 @@ createRedemptionTx
     -> m (Either TxError TxAux)
 createRedemptionTx utxo rsk outputs =
     runTxCreator whetherGroupedInputs $ do
-        TxRaw {..} <- prepareTxRaw [] utxo outputs (TxFee $ mkCoin 0)
+        TxRaw {..} <- prepareTxRaw mempty utxo outputs (TxFee $ mkCoin 0)
         let bareInputs = snd <$> trInputs
         pure $ makeRedemptionTx rsk bareInputs trOutputs
   where
@@ -608,7 +587,7 @@ withLinearFeePolicy action = view tcdFeePolicy >>= \case
 -- | Prepare transaction considering fees
 prepareTxWithFee
     :: (HasConfiguration, Monad m)
-    => [PendingTx]
+    => PendingAddresses
     -> Utxo
     -> TxOutputs
     -> TxCreator m TxRaw
@@ -619,7 +598,7 @@ prepareTxWithFee pendingTx utxo outputs = withLinearFeePolicy $ \linearPolicy ->
 -- outputs
 computeTxFee
     :: (HasConfiguration, Monad m)
-    => [PendingTx]
+    => PendingAddresses
     -> Utxo
     -> TxOutputs
     -> TxCreator m TxFee
@@ -676,7 +655,7 @@ computeTxFee pendingTx utxo outputs = do
 -- To possibly find better solutions we iterate for several times more.
 stabilizeTxFee
     :: forall m. (HasConfiguration, Monad m)
-    => [PendingTx]
+    => PendingAddresses
     -> TxSizeLinear
     -> Utxo
     -> TxOutputs

@@ -20,8 +20,8 @@ import           Pos.Aeson.WalletBackup           ()
 import           Pos.Client.Txp.Addresses         (MonadAddresses (..))
 import           Pos.Client.Txp.Balances          (getOwnUtxos)
 import           Pos.Client.Txp.History           (TxHistoryEntry (..))
-import           Pos.Client.Txp.Util              (InputSelectionPolicy(..), computeTxFee,
-                                                   runTxCreator)
+import           Pos.Client.Txp.Util              (InputSelectionPolicy (..),
+                                                   computeTxFee, runTxCreator)
 import           Pos.Communication                (SendActions (..), prepareMTx)
 import           Pos.Configuration                (HasNodeConfiguration)
 import           Pos.Core                         (Coin, HasConfiguration, addressF,
@@ -47,12 +47,12 @@ import           Pos.Wallet.Web.Error             (WalletError (..))
 import           Pos.Wallet.Web.Methods.History   (addHistoryTx, constructCTx,
                                                    getCurChainDifficulty)
 import qualified Pos.Wallet.Web.Methods.Logic     as L
-import           Pos.Wallet.Web.Methods.Txp       (coinDistrToOutputs, rewrapTxError,
+import           Pos.Wallet.Web.Methods.Txp       (coinDistrToOutputs,
+                                                   getPendingAddresses, rewrapTxError,
                                                    submitAndSaveNewPtx)
 import           Pos.Wallet.Web.Mode              (MonadWalletWebMode, WalletWebMode)
-import           Pos.Wallet.Web.Pending           (PendingTx, mkPendingTx)
+import           Pos.Wallet.Web.Pending           (mkPendingTx)
 import           Pos.Wallet.Web.State             (AddressLookupMode (Ever, Existing))
-import           Pos.Wallet.Web.State.State       (getPendingTxs)
 import           Pos.Wallet.Web.Util              (decodeCTypeOrFail,
                                                    getAccountAddrsOrThrow,
                                                    getWalletAccountIds, getWalletAddrsSet)
@@ -74,16 +74,6 @@ newPayment sa passphrase srcAccount dstAccount coin policy = do
         (one (dstAccount, coin))
         policy
 
-getPendingTxs' :: MonadWalletWebMode m => InputSelectionPolicy -> m [PendingTx]
-getPendingTxs' = \case
-    OptimizeForSecurity ->
-        -- NOTE (int-index) The pending transactions are ignored when we optimize
-        -- for security, so it is faster to not get them. In case they start being
-        -- used for other purposes, this shortcut must be removed.
-        return []
-    OptimizeForSize ->
-        getPendingTxs
-
 getTxFee
      :: MonadWalletWebMode m
      => AccountId
@@ -92,11 +82,11 @@ getTxFee
      -> InputSelectionPolicy
      -> m CCoin
 getTxFee srcAccount dstAccount coin policy = do
-    pendingTxs <- getPendingTxs' policy
+    pendingAddrs <- getPendingAddresses policy
     utxo <- getMoneySourceUtxo (AccountMoneySource srcAccount)
     outputs <- coinDistrToOutputs $ one (dstAccount, coin)
     TxFee fee <- rewrapTxError "Cannot compute transaction fee" $
-        eitherToThrow =<< runTxCreator policy (computeTxFee pendingTxs utxo outputs)
+        eitherToThrow =<< runTxCreator policy (computeTxFee pendingAddrs utxo outputs)
     pure $ mkCCoin fee
 
 data MoneySource
@@ -183,11 +173,11 @@ sendMoney SendActions{..} passphrase moneySource dstDistr policy = do
 
     relatedAccount <- getSomeMoneySourceAccount moneySource
     outputs <- coinDistrToOutputs dstDistr
-    pendingTxs <- getPendingTxs' policy
+    pendingAddrs <- getPendingAddresses policy
     (th, dstAddrs) <-
         rewrapTxError "Cannot send transaction" $ do
             (txAux, inpTxOuts') <-
-                prepareMTx pendingTxs getSigner policy srcAddrs outputs (relatedAccount, passphrase)
+                prepareMTx getSigner pendingAddrs policy srcAddrs outputs (relatedAccount, passphrase)
 
             ts <- Just <$> getCurrentTimestamp
             let tx = taTx txAux

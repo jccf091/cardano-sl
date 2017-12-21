@@ -21,8 +21,9 @@ import           Pos.Client.Txp.Addresses   (MonadAddresses (..))
 import           Pos.Client.Txp.Balances    (MonadBalances (..), getOwnUtxo,
                                              getOwnUtxoForPk)
 import           Pos.Client.Txp.History     (MonadTxHistory (..))
-import           Pos.Client.Txp.Util        (TxCreateMode, TxError (..), InputSelectionPolicy,
-                                             createMTx, createRedemptionTx, createTx)
+import           Pos.Client.Txp.Util        (InputSelectionPolicy, PendingAddresses (..),
+                                             TxCreateMode, TxError (..), createMTx,
+                                             createRedemptionTx, createTx)
 import           Pos.Communication.Methods  (sendTx)
 import           Pos.Communication.Protocol (EnqueueMsg, OutSpecs)
 import           Pos.Communication.Specs    (createOutSpecs)
@@ -37,8 +38,6 @@ import           Pos.Txp.Core               (TxAux (..), TxId, TxOut (..), TxOut
 import           Pos.Txp.Network.Types      (TxMsgContents (..))
 import           Pos.Util.Util              (eitherToThrow)
 import           Pos.WorkMode.Class         (MinWorkMode)
-
-import           Pos.Wallet.Web.Pending.Types -- FIXME
 
 
 type TxMode ssc m
@@ -63,30 +62,30 @@ submitAndSave enqueue txAux@TxAux {..} = do
 -- | Construct Tx using multiple secret keys and given list of desired outputs.
 prepareMTx
     :: TxMode ssc m
-    => [PendingTx]
-    -> (Address -> SafeSigner)
+    => (Address -> SafeSigner)
+    -> PendingAddresses
     -> InputSelectionPolicy
     -> NonEmpty Address
     -> NonEmpty TxOutAux
     -> AddrData m
     -> m (TxAux, NonEmpty TxOut)
-prepareMTx pendingTx hdwSigners inputSelectionPolicy addrs outputs addrData = do
+prepareMTx hdwSigners pendingAddrs inputSelectionPolicy addrs outputs addrData = do
     utxo <- getOwnUtxos (toList addrs)
-    eitherToThrow =<< createMTx pendingTx inputSelectionPolicy utxo hdwSigners outputs addrData
+    eitherToThrow =<< createMTx pendingAddrs inputSelectionPolicy utxo hdwSigners outputs addrData
 
 -- | Construct Tx using secret key and given list of desired outputs
 submitTx
     :: TxMode ssc m
-    => [PendingTx]
-    -> EnqueueMsg m
+    => EnqueueMsg m
+    -> PendingAddresses
     -> SafeSigner
     -> NonEmpty TxOutAux
     -> AddrData m
     -> m (TxAux, NonEmpty TxOut)
-submitTx pendingTx enqueue ss outputs addrData = do
+submitTx enqueue pendingAddrs ss outputs addrData = do
     let ourPk = safeToPublic ss
     utxo <- getOwnUtxoForPk ourPk
-    txWSpendings <- eitherToThrow =<< createTx pendingTx utxo ss outputs addrData
+    txWSpendings <- eitherToThrow =<< createTx pendingAddrs utxo ss outputs addrData
     txWSpendings <$ submitAndSave enqueue (fst txWSpendings)
 
 -- | Construct redemption Tx using redemption secret key and a output address
